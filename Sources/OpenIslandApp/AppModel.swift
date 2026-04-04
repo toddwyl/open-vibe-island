@@ -527,6 +527,41 @@ final class AppModel {
         return "Finish the setup steps in the left column, then start Codex from Terminal."
     }
 
+    /// Raw I/O results collected off the main thread during startup.
+    private struct StartupDiscoveryPayload: Sendable {
+        var codexRecords: [CodexTrackedSessionRecord]
+        var codexRecordsNeedPrune: Bool
+        var claudeRecords: [ClaudeTrackedSessionRecord]
+        var claudeRecordsNeedPrune: Bool
+        var discoveredCodexRecords: [CodexTrackedSessionRecord]
+        var discoveredClaudeSessions: [AgentSession]
+        var hooksBinaryURL: URL?
+    }
+
+    /// Performs all startup file I/O off the main thread and returns the raw results.
+    nonisolated private func loadStartupDiscoveryPayload() -> StartupDiscoveryPayload {
+        let cutoff = Date.now.addingTimeInterval(-86_400)
+
+        let allCodex = (try? codexSessionStore.load()) ?? []
+        let codexRecords = allCodex.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
+
+        let allClaude = (try? claudeSessionRegistry.load()) ?? []
+        let claudeRecords = allClaude.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
+
+        let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
+        let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
+
+        return StartupDiscoveryPayload(
+            codexRecords: codexRecords,
+            codexRecordsNeedPrune: codexRecords != allCodex,
+            claudeRecords: claudeRecords,
+            claudeRecordsNeedPrune: claudeRecords != allClaude,
+            discoveredCodexRecords: discoveredCodex,
+            discoveredClaudeSessions: discoveredClaude,
+            hooksBinaryURL: HooksBinaryLocator.locate()
+        )
+    }
+
     func startIfNeeded(
         startBridge: Bool = true,
         shouldPerformBootAnimation: Bool = true,
@@ -539,20 +574,22 @@ final class AppModel {
 
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
-            restorePersistedCodexSessions()
-            restorePersistedClaudeSessions()
-            discoverRecentCodexSessions()
-            discoverRecentClaudeSessions()
-            reconcileSessionAttachments()
-            startSessionAttachmentMonitoringIfNeeded()
-            hooksBinaryURL = HooksBinaryLocator.locate()
+
+            Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self else { return }
+                let payload = self.loadStartupDiscoveryPayload()
+                await MainActor.run {
+                    self.applyStartupDiscoveryPayload(payload)
+                }
+            }
+
+            // These are already async or lightweight — safe to start immediately.
             refreshCodexHookStatus()
             refreshClaudeHookStatus()
             refreshClaudeUsageState()
             startClaudeUsageMonitoringIfNeeded()
             refreshCodexUsageState()
             startCodexUsageMonitoringIfNeeded()
-            refreshCodexRolloutTracking()
         } else {
             isResolvingInitialLiveSessions = false
         }
@@ -1304,6 +1341,62 @@ final class AppModel {
             self.selectedSessionID = surfacedSessions.first?.id ?? state.sessions.first?.id
             return
         }
+    }
+
+    /// Applies startup discovery results on the main thread after background I/O completes.
+    private func applyStartupDiscoveryPayload(_ payload: StartupDiscoveryPayload) {
+        // Prune stale records if needed.
+        if payload.codexRecordsNeedPrune {
+            try? codexSessionStore.save(payload.codexRecords)
+        }
+        if payload.claudeRecordsNeedPrune {
+            try? claudeSessionRegistry.save(payload.claudeRecords)
+        }
+
+        // Restore persisted Codex sessions.
+        if !payload.codexRecords.isEmpty {
+            state = SessionState(sessions: payload.codexRecords.map(\.restorableSession))
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            lastActionMessage = "Restored \(payload.codexRecords.count) recent Codex session(s) from local cache."
+        }
+
+        // Restore persisted Claude sessions.
+        if !payload.claudeRecords.isEmpty {
+            let restoredSessions = payload.claudeRecords.map(\.restorableSession)
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            lastActionMessage = "Restored \(payload.claudeRecords.count) recent Claude session(s) from local registry."
+        }
+
+        // Merge discovered Codex sessions.
+        if !payload.discoveredCodexRecords.isEmpty {
+            let mergedSessions = mergeDiscoveredSessions(payload.discoveredCodexRecords.map(\.session))
+            state = SessionState(sessions: mergedSessions)
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            scheduleCodexSessionPersistence()
+            lastActionMessage = "Discovered \(payload.discoveredCodexRecords.count) recent Codex session(s) from local rollouts."
+        }
+
+        // Merge discovered Claude sessions.
+        if !payload.discoveredClaudeSessions.isEmpty {
+            let mergedSessions = mergeDiscoveredSessions(payload.discoveredClaudeSessions)
+            state = SessionState(sessions: mergedSessions)
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            scheduleClaudeSessionPersistence()
+            lastActionMessage = "Discovered \(payload.discoveredClaudeSessions.count) recent Claude session(s) from local transcripts."
+        }
+
+        // Apply hooks binary URL.
+        hooksBinaryURL = payload.hooksBinaryURL
+
+        // Reconcile attachments and start monitoring (requires sessions to be loaded).
+        reconcileSessionAttachments()
+        startSessionAttachmentMonitoringIfNeeded()
+        refreshCodexRolloutTracking()
     }
 
     private func restorePersistedCodexSessions() {

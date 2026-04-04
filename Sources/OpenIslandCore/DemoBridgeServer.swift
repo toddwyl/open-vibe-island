@@ -843,18 +843,7 @@ public final class DemoBridgeServer: @unchecked Sendable {
             return
         }
 
-        var jumpTarget = payload.defaultJumpTarget
-
-        // Once a Ghostty terminal session ID is established (either from a
-        // previous hook or from reconciliation), keep it stable.  AppleScript
-        // returns the *focused* terminal which may differ from the one that
-        // originally ran the Claude process if the user switched tabs.
-        if let existingGhosttyID = existingSession.jumpTarget?.terminalSessionID,
-           !existingGhosttyID.isEmpty,
-           existingSession.jumpTarget?.terminalApp.lowercased().contains("ghostty") == true {
-            jumpTarget.terminalSessionID = existingGhosttyID
-        }
-
+        let jumpTarget = payload.defaultJumpTarget
         guard existingSession.jumpTarget != jumpTarget else {
             return
         }

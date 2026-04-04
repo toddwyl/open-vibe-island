@@ -390,11 +390,17 @@ public extension CodexHookPayload {
             payload.terminalApp = inferTerminalApp(from: environment)
         }
 
+        if isGhosttyTerminalApp(payload.terminalApp) {
+            payload.terminalSessionID = nil
+            payload.terminalTitle = nil
+        }
+
         if payload.terminalTTY == nil {
             payload.terminalTTY = currentTTYProvider()
         }
 
-        if let terminalApp = payload.terminalApp {
+        if let terminalApp = payload.terminalApp,
+           shouldUseFocusedTerminalLocator(for: terminalApp) {
             let locator = terminalLocatorProvider(terminalApp)
             if payload.terminalSessionID == nil {
                 payload.terminalSessionID = locator.sessionID

@@ -428,8 +428,16 @@ struct TerminalSessionAttachmentProbe {
         let jumpTarget = session.jumpTarget
         let activeProcess = activeProcessesBySessionID[session.id]
 
-        if let hintedTool = hintedTool(for: snapshot.title),
-           session.tool != hintedTool {
+        let snapshotHint = hintedTool(for: snapshot.title)
+        if let snapshotHint, session.tool != snapshotHint {
+            return false
+        }
+
+        // When the snapshot title carries no tool hint (e.g. a plain shell
+        // prompt like "~/project"), do not match it to agent sessions.  This
+        // prevents Claude/Codex sessions from binding to an unrelated terminal
+        // that just happens to share the same working directory.
+        if snapshotHint == nil && (session.tool == .claudeCode || session.tool == .codex) {
             return false
         }
 

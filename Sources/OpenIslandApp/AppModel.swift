@@ -25,11 +25,9 @@ enum TrackedEventIngress {
 @MainActor
 @Observable
 final class AppModel {
-    private static let overlayDisplayPreferenceDefaultsKey = "overlay.display.preference"
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
-    private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.35
     typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
@@ -46,12 +44,24 @@ final class AppModel {
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
     var selectedSessionID: String?
-    var notchStatus: NotchStatus = .closed
-    var notchOpenReason: NotchOpenReason?
-    var islandSurface: IslandSurface = .sessionList()
     var showsAllSessions: Bool = false
-    var isOverlayVisible: Bool { notchStatus != .closed }
     let hooks = HookInstallationCoordinator()
+    let overlay = OverlayUICoordinator()
+
+    // Forwarding overlay properties for View/OverlayPanelController compatibility.
+    var notchStatus: NotchStatus {
+        get { overlay.notchStatus }
+        set { overlay.notchStatus = newValue }
+    }
+    var notchOpenReason: NotchOpenReason? {
+        get { overlay.notchOpenReason }
+        set { overlay.notchOpenReason = newValue }
+    }
+    var islandSurface: IslandSurface {
+        get { overlay.islandSurface }
+        set { overlay.islandSurface = newValue }
+    }
+    var isOverlayVisible: Bool { overlay.isOverlayVisible }
     var isCodexSetupBusy: Bool { hooks.isCodexSetupBusy }
     var isClaudeHookSetupBusy: Bool { hooks.isClaudeHookSetupBusy }
     var isClaudeUsageSetupBusy: Bool { hooks.isClaudeUsageSetupBusy }
@@ -72,8 +82,14 @@ final class AppModel {
     var codexUsageSnapshot: CodexUsageSnapshot? { hooks.codexUsageSnapshot }
     var hooksBinaryURL: URL? { hooks.hooksBinaryURL }
     var isResolvingInitialLiveSessions = false
-    var overlayDisplayOptions: [OverlayDisplayOption] = []
-    var overlayPlacementDiagnostics: OverlayPlacementDiagnostics?
+    var overlayDisplayOptions: [OverlayDisplayOption] {
+        get { overlay.overlayDisplayOptions }
+        set { overlay.overlayDisplayOptions = newValue }
+    }
+    var overlayPlacementDiagnostics: OverlayPlacementDiagnostics? {
+        get { overlay.overlayPlacementDiagnostics }
+        set { overlay.overlayPlacementDiagnostics = newValue }
+    }
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -92,15 +108,9 @@ final class AppModel {
             NotificationSoundService.selectedSoundName = selectedSoundName
         }
     }
-    var overlayDisplaySelectionID = OverlayDisplayOption.automaticID {
-        didSet {
-            guard overlayDisplaySelectionID != oldValue else {
-                return
-            }
-
-            persistOverlayDisplayPreference()
-            refreshOverlayPlacement()
-        }
+    var overlayDisplaySelectionID: String {
+        get { overlay.overlayDisplaySelectionID }
+        set { overlay.overlayDisplaySelectionID = newValue }
     }
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
@@ -109,16 +119,10 @@ final class AppModel {
     var disablesOverlayEventMonitoringDuringHarness = false
 
     @ObservationIgnored
-    private var overlayTransitionGeneration: UInt64 = 0
-
-    @ObservationIgnored
     private var bridgeTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var hasStarted = false
-
-    @ObservationIgnored
-    private let overlayPanelController = OverlayPanelController()
 
     @ObservationIgnored
     private let bridgeServer = BridgeServer()
@@ -165,11 +169,6 @@ final class AppModel {
     @ObservationIgnored
     private var sessionAttachmentMonitorTask: Task<Void, Never>?
 
-    @ObservationIgnored
-    private var notificationAutoCollapseTask: Task<Void, Never>?
-
-    @ObservationIgnored
-    private var autoCollapseSurfaceHasBeenEntered = false
 
     @ObservationIgnored
     private var jumpTask: Task<Void, Never>?
@@ -180,11 +179,23 @@ final class AppModel {
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
-        overlayDisplaySelectionID = UserDefaults.standard.string(
-            forKey: Self.overlayDisplayPreferenceDefaultsKey
-        ) ?? OverlayDisplayOption.automaticID
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+
+        overlay.appModel = self
+        overlay.restoreDisplayPreference()
+        overlay.onStatusMessage = { [weak self] message in
+            self?.lastActionMessage = message
+        }
+        overlay.activeIslandCardSessionAccessor = { [weak self] in
+            self?.activeIslandCardSession
+        }
+        overlay.isSoundMutedAccessor = { [weak self] in
+            self?.isSoundMuted ?? false
+        }
+        overlay.ignoresPointerExitAccessor = { [weak self] in
+            self?.ignoresPointerExitDuringHarness ?? false
+        }
 
         hooks.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
@@ -269,32 +280,6 @@ final class AppModel {
         }
 
         return state.session(id: sessionID)
-    }
-
-    var showsNotificationCard: Bool {
-        islandSurface.isNotificationCard
-    }
-
-    var shouldAutoCollapseOnMouseLeave: Bool {
-        if ignoresPointerExitDuringHarness {
-            return false
-        }
-
-        guard notchStatus == .opened else {
-            return false
-        }
-
-        if notchOpenReason == .hover && !islandSurface.isNotificationCard {
-            return true
-        }
-
-        return notchOpenReason == .notification
-            && islandSurface.autoDismissesWhenPresentedAsNotification(session: activeIslandCardSession)
-    }
-
-    private var autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry: Bool {
-        notchOpenReason == .notification
-            && islandSurface.autoDismissesWhenPresentedAsNotification(session: activeIslandCardSession)
     }
 
     var hasAnySession: Bool {
@@ -511,149 +496,25 @@ final class AppModel {
         selectedSessionID = sessionID
     }
 
-    func toggleOverlay() {
-        if notchStatus == .closed {
-            notchOpen(reason: .click)
-        } else {
-            notchClose()
-        }
-    }
+    func toggleOverlay() { overlay.toggleOverlay() }
+    func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) { overlay.notchOpen(reason: reason, surface: surface) }
+    func notchClose() { overlay.notchClose() }
+    func notchPop() { overlay.notchPop() }
+    func performBootAnimation() { overlay.performBootAnimation() }
+    func ensureOverlayPanel() { overlay.ensureOverlayPanel() }
+    func showOverlay() { overlay.showOverlay() }
+    func hideOverlay() { overlay.hideOverlay() }
+    func expandNotificationToSessionList() { overlay.expandNotificationToSessionList() }
+    func refreshOverlayDisplayConfiguration() { overlay.refreshOverlayDisplayConfiguration() }
+    func refreshOverlayPlacement() { overlay.refreshOverlayPlacement() }
+    private func refreshOverlayPlacementIfVisible() { overlay.refreshOverlayPlacementIfVisible() }
+    func notePointerInsideIslandSurface() { overlay.notePointerInsideIslandSurface() }
+    func handlePointerExitedIslandSurface() { overlay.handlePointerExitedIslandSurface() }
 
-    func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) {
-        transitionOverlay(
-            to: .opened,
-            reason: reason,
-            surface: surface,
-            interactive: true,
-            beforeTransition: nil,
-            afterStateChange: { [weak self] in
-                guard let self else { return }
-                self.autoCollapseSurfaceHasBeenEntered = false
-                self.updateNotificationAutoCollapse()
-            },
-            onPlacementResolved: { [weak self] in
-                guard let self, let overlayPlacementDiagnostics else { return }
-                self.lastActionMessage = "Overlay showing on \(overlayPlacementDiagnostics.targetScreenName) as \(overlayPlacementDiagnostics.modeDescription.lowercased())."
-            }
-        )
-    }
+    var shouldAutoCollapseOnMouseLeave: Bool { overlay.shouldAutoCollapseOnMouseLeave }
+    var autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry: Bool { overlay.autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry }
+    var showsNotificationCard: Bool { overlay.showsNotificationCard }
 
-    func notchClose() {
-        transitionOverlay(
-            to: .closed,
-            reason: nil,
-            surface: .sessionList(),
-            interactive: false,
-            beforeTransition: { [weak self] in
-                self?.notificationAutoCollapseTask?.cancel()
-                self?.notificationAutoCollapseTask = nil
-            },
-            afterStateChange: { [weak self] in
-                self?.autoCollapseSurfaceHasBeenEntered = false
-            }
-        )
-    }
-
-    /// Coordinates overlay transitions so SwiftUI re-renders complete before AppKit
-    /// animates the panel frame, preventing main-thread contention.
-    ///
-    /// Phase 1 (current frame): Mutates @Observable state → SwiftUI re-renders.
-    /// Phase 2 (next run-loop iteration): Resizes/repositions the NSPanel via AppKit animation.
-    private func transitionOverlay(
-        to status: NotchStatus,
-        reason: NotchOpenReason?,
-        surface: IslandSurface,
-        interactive: Bool,
-        beforeTransition: (() -> Void)?,
-        afterStateChange: (() -> Void)? = nil,
-        onPlacementResolved: (() -> Void)? = nil
-    ) {
-        beforeTransition?()
-
-        // Phase 1: State mutation (drives SwiftUI re-render this frame).
-        islandSurface = surface
-        notchOpenReason = reason
-        notchStatus = status
-        overlayPanelController.setInteractive(interactive)
-        afterStateChange?()
-
-        // Phase 2: AppKit panel frame animation (deferred to next run-loop iteration).
-        overlayTransitionGeneration &+= 1
-        let capturedGeneration = overlayTransitionGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.overlayTransitionGeneration == capturedGeneration else { return }
-            switch status {
-            case .opened:
-                self.overlayPlacementDiagnostics = self.overlayPanelController.show(
-                    model: self,
-                    preferredScreenID: self.preferredOverlayScreenID
-                )
-            case .closed, .popping:
-                self.refreshOverlayPlacement()
-            }
-            onPlacementResolved?()
-        }
-    }
-
-    func notchPop() {
-        guard notchStatus == .closed else { return }
-        islandSurface = .sessionList()
-        notchStatus = .popping
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard self?.notchStatus == .popping else { return }
-            self?.notchStatus = .closed
-        }
-    }
-
-    func performBootAnimation() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self else { return }
-            self.notchOpen(reason: .boot, surface: .sessionList())
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                guard self?.notchOpenReason == .boot else { return }
-                self?.notchClose()
-            }
-        }
-    }
-
-    func ensureOverlayPanel() {
-        overlayPanelController.ensurePanel(model: self, preferredScreenID: preferredOverlayScreenID)
-    }
-
-    // Legacy compatibility
-    func showOverlay() { notchOpen(reason: .click, surface: .sessionList()) }
-    func hideOverlay() { notchClose() }
-
-    /// Transition from notification mode (single session) to full session list.
-    func expandNotificationToSessionList() {
-        islandSurface = .sessionList()
-        notchOpenReason = .click
-        notificationAutoCollapseTask?.cancel()
-        notificationAutoCollapseTask = nil
-        refreshOverlayPlacementIfVisible()
-    }
-
-    func refreshOverlayDisplayConfiguration() {
-        overlayDisplayOptions = overlayPanelController.availableDisplayOptions()
-
-        let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
-        if !validSelectionIDs.contains(overlayDisplaySelectionID) {
-            overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
-        }
-
-        refreshOverlayPlacement()
-    }
-
-    func refreshOverlayPlacement() {
-        overlayPlacementDiagnostics = overlayPanelController.reposition(
-            preferredScreenID: preferredOverlayScreenID
-        )
-    }
-
-    private func refreshOverlayPlacementIfVisible() {
-        refreshOverlayPlacement()
-    }
 
     func showSettings() {
         openSettingsWindow?()
@@ -692,67 +553,12 @@ final class AppModel {
         presentOverlay: Bool = false,
         autoCollapseNotificationCards: Bool = false
     ) {
-        notificationAutoCollapseTask?.cancel()
-        notificationAutoCollapseTask = nil
-        autoCollapseSurfaceHasBeenEntered = false
-
         state = SessionState(sessions: snapshot.sessions)
         selectedSessionID = snapshot.selectedSessionID ?? snapshot.sessions.first?.id
-        islandSurface = snapshot.islandSurface
-        notchStatus = snapshot.notchStatus
-        notchOpenReason = snapshot.notchOpenReason
         lastActionMessage = "Loaded debug scenario: \(snapshot.title)."
         harnessRuntimeMonitor?.recordMilestone("scenarioLoaded", message: snapshot.title)
 
-        if autoCollapseNotificationCards {
-            updateNotificationAutoCollapse()
-        }
-
-        guard presentOverlay else {
-            return
-        }
-
-        // Immediate interactivity update.
-        let interactive = snapshot.notchStatus == .opened
-        overlayPanelController.setInteractive(interactive)
-
-        // Defer AppKit panel animation to the next run-loop iteration.
-        overlayTransitionGeneration &+= 1
-        let capturedGeneration = overlayTransitionGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.overlayTransitionGeneration == capturedGeneration else { return }
-            switch snapshot.notchStatus {
-            case .opened:
-                self.overlayPlacementDiagnostics = self.overlayPanelController.show(
-                    model: self,
-                    preferredScreenID: self.preferredOverlayScreenID
-                )
-            case .closed, .popping:
-                self.refreshOverlayPlacement()
-            }
-            self.harnessRuntimeMonitor?.recordMilestone("overlayPresented", message: snapshot.title)
-        }
-    }
-
-    func notePointerInsideIslandSurface() {
-        guard shouldAutoCollapseOnMouseLeave else {
-            return
-        }
-
-        autoCollapseSurfaceHasBeenEntered = true
-    }
-
-    func handlePointerExitedIslandSurface() {
-        guard shouldAutoCollapseOnMouseLeave else {
-            return
-        }
-
-        guard !autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry
-                || autoCollapseSurfaceHasBeenEntered else {
-            return
-        }
-
-        notchClose()
+        overlay.applyOverlayState(from: snapshot, presentOverlay: presentOverlay, autoCollapseNotificationCards: autoCollapseNotificationCards)
     }
 
     func approveFocusedPermission(_ mode: ClaudePermissionMode?) {
@@ -949,63 +755,15 @@ final class AppModel {
     }
 
     private func presentNotificationSurface(_ surface: IslandSurface) {
-        guard surface.isNotificationCard else {
-            return
-        }
-
-        NotificationSoundService.playNotification(isMuted: isSoundMuted)
-        notchOpen(reason: .notification, surface: surface)
+        overlay.presentNotificationSurface(surface)
     }
 
     private func reconcileIslandSurfaceAfterStateChange() {
-        guard islandSurface.isNotificationCard else {
-            return
-        }
-
-        let session = activeIslandCardSession
-        guard islandSurface.matchesCurrentState(of: session) else {
-            if notchOpenReason == .notification {
-                notchClose()
-            } else {
-                islandSurface = .sessionList()
-            }
-            return
-        }
-
-        updateNotificationAutoCollapse()
+        overlay.reconcileIslandSurfaceAfterStateChange()
     }
 
     private func dismissNotificationSurfaceIfPresent(for sessionID: String) {
-        guard islandSurface.sessionID == sessionID,
-              notchOpenReason == .notification else {
-            return
-        }
-
-        notchClose()
-    }
-
-    private func updateNotificationAutoCollapse() {
-        notificationAutoCollapseTask?.cancel()
-        notificationAutoCollapseTask = nil
-
-        guard notchStatus == .opened,
-              notchOpenReason == .notification,
-              islandSurface.autoDismissesWhenPresentedAsNotification(session: activeIslandCardSession) else {
-            return
-        }
-
-        notificationAutoCollapseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(Self.notificationSurfaceAutoCollapseDelay))
-
-            guard let self,
-                  self.notchStatus == .opened,
-                  self.notchOpenReason == .notification,
-                  self.islandSurface.autoDismissesWhenPresentedAsNotification(session: self.activeIslandCardSession) else {
-                return
-            }
-
-            self.notchClose()
-        }
+        overlay.dismissNotificationSurfaceIfPresent(for: sessionID)
     }
 
     private func synchronizeSelection() {
@@ -1281,17 +1039,7 @@ final class AppModel {
     }
 
     private func dismissOverlayForJump() {
-        guard isOverlayVisible else {
-            return
-        }
-
-        notchClose()
-    }
-
-    private var preferredOverlayScreenID: String? {
-        overlayDisplaySelectionID == OverlayDisplayOption.automaticID
-            ? nil
-            : overlayDisplaySelectionID
+        overlay.dismissOverlayForJump()
     }
 
     private var sessionBuckets: (primary: [AgentSession], overflow: [AgentSession]) {
@@ -1389,16 +1137,6 @@ final class AppModel {
         }
 
         return score
-    }
-
-    private func persistOverlayDisplayPreference() {
-        let defaults = UserDefaults.standard
-
-        if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
-            defaults.removeObject(forKey: Self.overlayDisplayPreferenceDefaultsKey)
-        } else {
-            defaults.set(overlayDisplaySelectionID, forKey: Self.overlayDisplayPreferenceDefaultsKey)
-        }
     }
 
     private func startSessionAttachmentMonitoringIfNeeded() {

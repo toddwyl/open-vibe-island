@@ -20,6 +20,9 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Build and package
         env:
           OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}

@@ -322,6 +322,7 @@ struct SetupSettingsPane: View {
 
     @State private var confirmingUninstallClaude = false
     @State private var confirmingUninstallCodex = false
+    @State private var confirmingUninstallOpenCode = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -358,6 +359,23 @@ struct SetupSettingsPane: View {
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
                     Text(lang.t("settings.general.uninstallConfirmMessage.codex"))
+                }
+
+                hookRow(
+                    name: "OpenCode",
+                    installed: model.openCodePluginInstalled,
+                    busy: model.isOpenCodeSetupBusy,
+                    requiresBinary: false,
+                    installAction: { model.installOpenCodePlugin() },
+                    uninstallAction: { confirmingUninstallOpenCode = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallOpenCode) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallOpenCodePlugin()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove the Open Island plugin from ~/.config/opencode/plugins/.")
                 }
             }
 
@@ -408,6 +426,7 @@ struct SetupSettingsPane: View {
                 Button(lang.t("setup.installAll")) {
                     if !model.claudeHooksInstalled { model.installClaudeHooks() }
                     if !model.codexHooksInstalled { model.installCodexHooks() }
+                    if !model.openCodePluginInstalled { model.installOpenCodePlugin() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
@@ -419,7 +438,7 @@ struct SetupSettingsPane: View {
     }
 
     private var allReady: Bool {
-        model.claudeHooksInstalled && model.codexHooksInstalled && model.claudeUsageInstalled
+        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder
@@ -427,6 +446,7 @@ struct SetupSettingsPane: View {
         name: String,
         installed: Bool,
         busy: Bool,
+        requiresBinary: Bool = true,
         installAction: @escaping () -> Void,
         uninstallAction: @escaping () -> Void
     ) -> some View {
@@ -453,7 +473,7 @@ struct SetupSettingsPane: View {
                 Button(lang.t("settings.general.install")) {
                     installAction()
                 }
-                .disabled(model.hooksBinaryURL == nil)
+                .disabled(requiresBinary && model.hooksBinaryURL == nil)
             }
         }
     }

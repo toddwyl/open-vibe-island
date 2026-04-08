@@ -24,6 +24,21 @@ public struct CursorFileEdit: Equatable, Codable, Sendable {
     }
 }
 
+public struct CursorAttachment: Equatable, Codable, Sendable {
+    public var type: String?
+    public var filePath: String?
+
+    public init(type: String? = nil, filePath: String? = nil) {
+        self.type = type
+        self.filePath = filePath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case filePath = "file_path"
+    }
+}
+
 public struct CursorHookPayload: Equatable, Codable, Sendable {
     public var hookEventName: CursorHookEventName
     public var conversationId: String
@@ -41,7 +56,7 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
     public var edits: [CursorFileEdit]?
     public var content: String?
     public var status: String?
-    public var attachments: [String]?
+    public var attachments: [CursorAttachment]?
 
     // Cursor-specific metadata
     public var model: String?
@@ -86,7 +101,7 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
         edits: [CursorFileEdit]? = nil,
         content: String? = nil,
         status: String? = nil,
-        attachments: [String]? = nil,
+        attachments: [CursorAttachment]? = nil,
         model: String? = nil,
         cursorVersion: String? = nil,
         transcriptPath: String? = nil,
@@ -111,6 +126,29 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
         self.cursorVersion = cursorVersion
         self.transcriptPath = transcriptPath
         self.sandbox = sandbox
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.hookEventName = try container.decode(CursorHookEventName.self, forKey: .hookEventName)
+        self.conversationId = try container.decode(String.self, forKey: .conversationId)
+        self.generationId = try container.decode(String.self, forKey: .generationId)
+        self.workspaceRoots = (try? container.decodeIfPresent([String].self, forKey: .workspaceRoots)) ?? []
+        self.prompt = try? container.decodeIfPresent(String.self, forKey: .prompt)
+        self.command = try? container.decodeIfPresent(String.self, forKey: .command)
+        self.cwd = try? container.decodeIfPresent(String.self, forKey: .cwd)
+        self.server = try? container.decodeIfPresent(String.self, forKey: .server)
+        self.toolName = try? container.decodeIfPresent(String.self, forKey: .toolName)
+        self.toolInput = try? container.decodeIfPresent(String.self, forKey: .toolInput)
+        self.filePath = try? container.decodeIfPresent(String.self, forKey: .filePath)
+        self.edits = try? container.decodeIfPresent([CursorFileEdit].self, forKey: .edits)
+        self.content = try? container.decodeIfPresent(String.self, forKey: .content)
+        self.status = try? container.decodeIfPresent(String.self, forKey: .status)
+        self.attachments = try? container.decodeIfPresent([CursorAttachment].self, forKey: .attachments)
+        self.model = try? container.decodeIfPresent(String.self, forKey: .model)
+        self.cursorVersion = try? container.decodeIfPresent(String.self, forKey: .cursorVersion)
+        self.transcriptPath = try? container.decodeIfPresent(String.self, forKey: .transcriptPath)
+        self.sandbox = try? container.decodeIfPresent(Bool.self, forKey: .sandbox)
     }
 }
 

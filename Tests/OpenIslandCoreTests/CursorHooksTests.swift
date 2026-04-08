@@ -197,4 +197,87 @@ struct CursorHooksTests {
         #expect(payload.defaultCursorMetadata.initialUserPrompt == nil)
         #expect(payload.defaultCursorMetadata.lastUserPrompt == nil)
     }
+
+    @Test
+    func cursorHookPayloadDecodesWithObjectAttachments() throws {
+        let json = """
+        {
+            "hook_event_name": "beforeSubmitPrompt",
+            "conversation_id": "conv-attach",
+            "generation_id": "gen-attach",
+            "workspace_roots": ["/Users/test/project"],
+            "prompt": "Fix the bug",
+            "attachments": [
+                {"type": "rule", "file_path": "CLAUDE.md"},
+                {"type": "file", "file_path": "src/main.ts"}
+            ],
+            "model": "claude-4.6-opus",
+            "session_id": "conv-attach",
+            "composer_mode": "agent",
+            "user_email": "test@example.com"
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(CursorHookPayload.self, from: json)
+        #expect(payload.hookEventName == .beforeSubmitPrompt)
+        #expect(payload.prompt == "Fix the bug")
+        #expect(payload.attachments?.count == 2)
+        #expect(payload.attachments?[0].type == "rule")
+        #expect(payload.attachments?[0].filePath == "CLAUDE.md")
+        #expect(payload.model == "claude-4.6-opus")
+        #expect(payload.promptPreview == "Fix the bug")
+    }
+
+    @Test
+    func cursorTranscriptReaderExtractsPromptWithUserQueryTag() throws {
+        let tempFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cursor-transcript-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        let entry = """
+        {"role":"user","message":{"content":[{"type":"text","text":"<image_files>\\nSome image context\\n</image_files><user_query>\\n修复这个bug\\n</user_query>"}]}}
+        """
+        try entry.write(to: tempFile, atomically: true, encoding: .utf8)
+
+        let prompt = CursorTranscriptReader.initialUserPrompt(at: tempFile.path)
+        #expect(prompt == "修复这个bug")
+    }
+
+    @Test
+    func cursorTranscriptReaderExtractsPlainPrompt() throws {
+        let tempFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cursor-transcript-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        let entry = """
+        {"role":"user","message":{"content":[{"type":"text","text":"Add dark mode support to the settings page"}]}}
+        """
+        try entry.write(to: tempFile, atomically: true, encoding: .utf8)
+
+        let prompt = CursorTranscriptReader.initialUserPrompt(at: tempFile.path)
+        #expect(prompt == "Add dark mode support to the settings page")
+    }
+
+    @Test
+    func cursorTranscriptReaderReturnsNilForMissingFile() {
+        let prompt = CursorTranscriptReader.initialUserPrompt(at: "/nonexistent/path.jsonl")
+        #expect(prompt == nil)
+    }
+
+    @Test
+    func cursorTranscriptReaderClipsLongPrompts() throws {
+        let tempFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cursor-transcript-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        let longText = String(repeating: "word ", count: 100)
+        let entry = """
+        {"role":"user","message":{"content":[{"type":"text","text":"\(longText)"}]}}
+        """
+        try entry.write(to: tempFile, atomically: true, encoding: .utf8)
+
+        let prompt = CursorTranscriptReader.initialUserPrompt(at: tempFile.path)
+        #expect(prompt != nil)
+        #expect((prompt?.count ?? 0) <= 201)
+    }
 }

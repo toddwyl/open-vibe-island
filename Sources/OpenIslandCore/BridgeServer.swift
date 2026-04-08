@@ -1098,11 +1098,13 @@ public final class BridgeServer: @unchecked Sendable {
             ensureCursorSessionExists(for: payload)
             synchronizeCursorJumpTarget(for: payload)
             synchronizeCursorMetadata(for: payload)
+            let promptSummary = payload.promptPreview
+                ?? localState.session(id: payload.sessionID)?.cursorMetadata?.initialUserPrompt
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
-                        summary: payload.promptPreview.map { "Prompt: \($0)" } ?? payload.implicitStartSummary,
+                        summary: promptSummary.map { "Prompt: \($0)" } ?? payload.implicitStartSummary,
                         phase: .running,
                         timestamp: .now
                     )
@@ -1270,18 +1272,25 @@ public final class BridgeServer: @unchecked Sendable {
         let update = payload.defaultCursorMetadata
         let clearToolState = payload.hookEventName == .stop
 
+        let resolvedTranscriptPath = update.transcriptPath ?? existing?.transcriptPath
+
+        var initialPrompt = existing?.initialUserPrompt ?? update.initialUserPrompt
+        if initialPrompt == nil, let transcriptPath = resolvedTranscriptPath {
+            initialPrompt = CursorTranscriptReader.initialUserPrompt(at: transcriptPath)
+        }
+
         let merged = CursorSessionMetadata(
             conversationId: update.conversationId ?? existing?.conversationId,
             generationId: update.generationId ?? existing?.generationId,
             workspaceRoots: update.workspaceRoots ?? existing?.workspaceRoots,
-            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
+            initialUserPrompt: initialPrompt,
+            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt ?? initialPrompt,
             lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
             currentTool: clearToolState ? nil : (update.currentTool ?? existing?.currentTool),
             currentToolInputPreview: clearToolState ? nil : (update.currentToolInputPreview ?? existing?.currentToolInputPreview),
             currentCommandPreview: clearToolState ? nil : (update.currentCommandPreview ?? existing?.currentCommandPreview),
             model: update.model ?? existing?.model,
-            transcriptPath: update.transcriptPath ?? existing?.transcriptPath
+            transcriptPath: resolvedTranscriptPath
         )
 
         guard existing != merged else { return }

@@ -1,6 +1,8 @@
 import Foundation
 
 public enum CursorHookEventName: String, Codable, Sendable {
+    case sessionStart
+    case sessionEnd
     case beforeSubmitPrompt
     case beforeShellExecution
     case beforeMCPExecution
@@ -43,6 +45,13 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
     public var status: String?
     public var attachments: [String]?
 
+    // Session lifecycle fields (sessionStart/sessionEnd)
+    public var reason: String?
+    public var durationMs: Int64?
+    public var isBackgroundAgent: Bool?
+    public var composerMode: String?
+    public var loopCount: Int?
+
     // Cursor-specific metadata
     public var model: String?
     public var cursorVersion: String?
@@ -65,6 +74,11 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
         case content
         case status
         case attachments
+        case reason
+        case durationMs = "duration_ms"
+        case isBackgroundAgent = "is_background_agent"
+        case composerMode = "composer_mode"
+        case loopCount = "loop_count"
         case model
         case cursorVersion = "cursor_version"
         case transcriptPath = "transcript_path"
@@ -87,6 +101,11 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
         content: String? = nil,
         status: String? = nil,
         attachments: [String]? = nil,
+        reason: String? = nil,
+        durationMs: Int64? = nil,
+        isBackgroundAgent: Bool? = nil,
+        composerMode: String? = nil,
+        loopCount: Int? = nil,
         model: String? = nil,
         cursorVersion: String? = nil,
         transcriptPath: String? = nil,
@@ -107,6 +126,11 @@ public struct CursorHookPayload: Equatable, Codable, Sendable {
         self.content = content
         self.status = status
         self.attachments = attachments
+        self.reason = reason
+        self.durationMs = durationMs
+        self.isBackgroundAgent = isBackgroundAgent
+        self.composerMode = composerMode
+        self.loopCount = loopCount
         self.model = model
         self.cursorVersion = cursorVersion
         self.transcriptPath = transcriptPath
@@ -238,6 +262,10 @@ public extension CursorHookPayload {
 
     var implicitStartSummary: String {
         switch hookEventName {
+        case .sessionStart:
+            return "Cursor session started in \(workspaceName)."
+        case .sessionEnd:
+            return "Cursor session ended in \(workspaceName)."
         case .beforeSubmitPrompt:
             return "Cursor received a new prompt in \(workspaceName)."
         case .beforeShellExecution:

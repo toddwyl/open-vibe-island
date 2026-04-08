@@ -83,6 +83,8 @@ struct CursorHooksTests {
         let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         let hooks = object["hooks"] as! [String: Any]
 
+        #expect(hooks.keys.contains("sessionStart"))
+        #expect(hooks.keys.contains("sessionEnd"))
         #expect(hooks.keys.contains("beforeShellExecution"))
         #expect(hooks.keys.contains("beforeMCPExecution"))
         #expect(hooks.keys.contains("stop"))
@@ -169,11 +171,52 @@ struct CursorHooksTests {
         let hooksData = try Data(contentsOf: cursorDirectory.appendingPathComponent("hooks.json"))
         let hooksObject = try JSONSerialization.jsonObject(with: hooksData) as! [String: Any]
         let hooks = hooksObject["hooks"] as! [String: Any]
-        #expect(hooks.keys.count == 6)
+        #expect(hooks.keys.count == 8)
 
         let uninstallStatus = try manager.uninstall()
         #expect(uninstallStatus.managedHooksPresent == false)
         #expect(!FileManager.default.fileExists(atPath: cursorDirectory.appendingPathComponent(CursorHookInstallerManifest.fileName).path))
+    }
+
+    @Test
+    func cursorHookPayloadDecodesSessionStartEvent() throws {
+        let json = """
+        {
+            "hook_event_name": "sessionStart",
+            "conversation_id": "conv-new",
+            "generation_id": "gen-new",
+            "workspace_roots": ["/Users/test/project"],
+            "composer_mode": "agent",
+            "is_background_agent": false,
+            "loop_count": 0
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(CursorHookPayload.self, from: json)
+        #expect(payload.hookEventName == .sessionStart)
+        #expect(payload.composerMode == "agent")
+        #expect(payload.isBackgroundAgent == false)
+        #expect(payload.loopCount == 0)
+        #expect(payload.isBlockingHook == false)
+    }
+
+    @Test
+    func cursorHookPayloadDecodesSessionEndEvent() throws {
+        let json = """
+        {
+            "hook_event_name": "sessionEnd",
+            "conversation_id": "conv-end",
+            "generation_id": "gen-end",
+            "workspace_roots": ["/Users/test/project"],
+            "reason": "completed",
+            "duration_ms": 45000
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(CursorHookPayload.self, from: json)
+        #expect(payload.hookEventName == .sessionEnd)
+        #expect(payload.reason == "completed")
+        #expect(payload.durationMs == 45000)
     }
 
     @Test

@@ -37,6 +37,8 @@ public enum CursorHookInstallerError: Error, LocalizedError {
 
 public enum CursorHookInstaller {
     private static let hookEvents: [String] = [
+        "sessionStart",
+        "sessionEnd",
         "beforeSubmitPrompt",
         "beforeShellExecution",
         "beforeMCPExecution",

@@ -167,6 +167,9 @@ final class AppModel {
     var disablesOverlayEventMonitoringDuringHarness = false
 
     @ObservationIgnored
+    private var deferredCursorCompletionTasks: [String: Task<Void, Never>] = [:]
+
+    @ObservationIgnored
     private var bridgeTask: Task<Void, Never>?
 
     @ObservationIgnored

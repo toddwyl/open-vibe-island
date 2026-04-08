@@ -11,6 +11,8 @@ final class OverlayPanelController {
     private static let preferredNotificationPanelWidth: CGFloat = 620
     private static let openedContentWidthPadding: CGFloat = 28
     private static let openedContentBottomPadding: CGFloat = 0
+    /// Must match `IslandPanelView.maxSessionListHeight` — the AutoHeightScrollView cap.
+    private static let maxSessionListHeight: CGFloat = 560
     private static let maxVisibleSessionRows: Int = 6
     private static let openedRowSpacing: CGFloat = 6
     // Content padding (8) + scroll padding (4) + view chrome: outerBottomPadding (14) + header-content gap (12)
@@ -473,7 +475,10 @@ final class OverlayPanelController {
 
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
         let spacingHeight = CGFloat(max(0, rowHeights.count - 1)) * Self.openedRowSpacing
-        return rowsHeight + spacingHeight + Self.openedContentVerticalInsets
+        let listHeight = rowsHeight + spacingHeight
+        // Cap to match AutoHeightScrollView's maxHeight in IslandPanelView.
+        let cappedListHeight = min(listHeight, Self.maxSessionListHeight)
+        return cappedListHeight + Self.openedContentVerticalInsets
     }
 
     /// Additional height for the actionable session's inline action area.

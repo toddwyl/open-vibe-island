@@ -553,7 +553,7 @@ struct SetupSettingsPane: View {
                 Spacer()
                 if ClaudeConfigDirectory.customDirectory != nil {
                     Button(lang.t("setup.claudeConfigDir.reset")) {
-                        ClaudeConfigDirectory.customDirectory = nil
+                        model.updateClaudeConfigDirectory(to: nil)
                     }
                     .font(.caption)
                 }
@@ -564,7 +564,7 @@ struct SetupSettingsPane: View {
                     panel.canCreateDirectories = true
                     panel.prompt = lang.t("setup.claudeConfigDir.choose")
                     if panel.runModal() == .OK, let url = panel.url {
-                        ClaudeConfigDirectory.customDirectory = url
+                        model.updateClaudeConfigDirectory(to: url)
                     }
                 }
             }

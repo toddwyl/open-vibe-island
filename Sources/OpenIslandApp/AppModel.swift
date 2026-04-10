@@ -121,6 +121,7 @@ final class AppModel {
     func uninstallCursorHooks() { hooks.uninstallCursorHooks() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
+    func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
     func runHealthChecks() { hooks.runHealthChecks() }
     func repairHooks() {
         Task { @MainActor in

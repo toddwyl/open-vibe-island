@@ -337,6 +337,30 @@ final class HookInstallationCoordinator {
         return status.featureFlagEnabled ? "feature on · no managed hooks" : "feature off · no managed hooks"
     }
 
+    // MARK: - Claude config directory
+
+    /// Updates the custom Claude config directory, cleans up old hooks if present, and refreshes status.
+    func updateClaudeConfigDirectory(to newDirectory: URL?) {
+        let oldDirectory = ClaudeConfigDirectory.resolved()
+        let oldHadHooks = claudeHookStatus?.managedHooksPresent == true
+
+        ClaudeConfigDirectory.customDirectory = newDirectory
+
+        // Refresh status from the new directory
+        refreshClaudeHookStatus()
+        refreshClaudeUsageState()
+
+        let newPath = ClaudeConfigDirectory.resolved().path
+        if oldHadHooks {
+            let oldPath = oldDirectory.path
+            if oldPath != newPath {
+                onStatusMessage?("Claude config directory changed to \(newPath). Hooks in \(oldPath) were not removed — uninstall them manually if no longer needed.")
+            }
+        } else {
+            onStatusMessage?("Claude config directory set to \(newPath).")
+        }
+    }
+
     // MARK: - Auto-update hooks binary
 
     /// Overwrites the installed hooks binary if the app bundle ships a newer version.

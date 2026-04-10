@@ -19,8 +19,8 @@ Brief English summary of this release.
 1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
    下载 **Open Island.dmg**，打开后将 **Open Island** 拖入 **Applications**。
 
-2. Requires **macOS 14+** and **Apple Silicon** (M1/M2/M3/M4).
-   需要 **macOS 14+** 和 **Apple Silicon** (M1/M2/M3/M4)。
+2. Requires **macOS 14+**. Supports both **Apple Silicon** and **Intel** Macs.
+   需要 **macOS 14+**。同时支持 **Apple Silicon** 和 **Intel** Mac。
 
 > This build is signed and notarized with Apple Developer ID. You can open it directly without any security workaround.
 > 本版本已通过 Apple 签名公证，可直接打开运行，无需任何安全设置。

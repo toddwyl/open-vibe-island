@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OpenIslandCore
@@ -296,6 +297,18 @@ final class ProcessMonitoringCoordinator {
         let hasOpenCodeProcess = activeProcesses.contains { $0.tool == .openCode }
         if hasOpenCodeProcess {
             for session in sessions where session.tool == .openCode && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
+        // Cursor sessions: Cursor is an Electron IDE — we cannot match
+        // individual session IDs from ps/lsof.  Keep all Cursor sessions
+        // alive as long as Cursor.app is running.
+        let isCursorRunning = !NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.todesktop.230313mzl4w4u92"
+        ).isEmpty
+        if isCursorRunning {
+            for session in sessions where session.tool == .cursor && !session.isDemoSession {
                 aliveIDs.insert(session.id)
             }
         }

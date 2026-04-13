@@ -179,6 +179,65 @@ final class TerminalJumpServiceTests: XCTestCase {
         XCTAssertTrue(openedArguments.values.isEmpty)
     }
 
+    func testCodexAppJumpUsesCodexCLIWithAppSubcommand() throws {
+        let processInvocations = ProcessInvocationBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex" ? URL(fileURLWithPath: "/Applications/Codex.app") : nil
+            },
+            appRunningChecker: { _ in false },
+            openAction: { _ in },
+            appleScriptRunner: { _ in "" },
+            processRunner: { executable, arguments in
+                processInvocations.values.append((executable, arguments))
+                return true
+            }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Codex",
+                workspaceName: "demo",
+                paneTitle: "Codex",
+                workingDirectory: "/Users/test/demo"
+            )
+        )
+
+        XCTAssertEqual(result, "Focused the matching Codex workspace.")
+        XCTAssertEqual(processInvocations.values.count, 1)
+        XCTAssertEqual(processInvocations.values.first?.0, "codex")
+        XCTAssertEqual(processInvocations.values.first?.1, ["app", "/Users/test/demo"])
+    }
+
+    func testCodexAppJumpActivatesRunningAppWhenCLIWorkspaceOpenFails() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex" ? URL(fileURLWithPath: "/Applications/Codex.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            processRunner: { _, _ in false }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Codex",
+                workspaceName: "demo",
+                paneTitle: "Codex",
+                workingDirectory: "/Users/test/demo"
+            )
+        )
+
+        XCTAssertEqual(result, "Activated Codex.")
+        XCTAssertEqual(openedArguments.values, [["-b", "com.openai.codex"]])
+    }
+
     func testWarpJumpReturnsImmediatelyWhenAlreadyOnTargetPane() throws {
         let openedArguments = OpenedArgumentsBox()
         let keystroker = KeystrokeInjectorSpy()

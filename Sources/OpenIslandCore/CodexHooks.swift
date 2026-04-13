@@ -482,6 +482,7 @@ public extension CodexHookPayload {
 
     private static let noLocatorTerminalApps: Set<String> = [
         "cmux", "kaku", "wezterm", "zellij",
+        "codex",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -517,6 +518,12 @@ public extension CodexHookPayload {
         }
         if environment["ZELLIJ"] != nil {
             return "Zellij"
+        }
+
+        // Codex desktop app (OpenAI): embedded shell sessions belong to the GUI
+        // bundle rather than Terminal.app / iTerm / etc.
+        if environment["__CFBundleIdentifier"]?.lowercased() == "com.openai.codex" {
+            return "Codex"
         }
 
         // TERM_PROGRAM is the only authoritative terminal signal. Each

@@ -84,6 +84,11 @@ struct TerminalJumpService {
             aliases: ["cursor"]
         ),
         TerminalAppDescriptor(
+            displayName: "Codex",
+            bundleIdentifier: "com.openai.codex",
+            aliases: ["codex", "codex app", "openai codex"]
+        ),
+        TerminalAppDescriptor(
             displayName: "VS Code",
             bundleIdentifier: "com.microsoft.VSCode",
             aliases: ["vscode", "code", "visual studio code"]
@@ -352,6 +357,17 @@ struct TerminalJumpService {
                    jumpToWeztermFamilyTerminal(target, cliPath: cliPath, bundleIdentifier: descriptor.bundleIdentifier) {
                     return "Focused the matching \(descriptor.displayName) pane."
                 }
+            case "com.openai.codex":
+                if let workingDirectory = target.workingDirectory {
+                    let opened = jumpToCodexAppWorkspace(workingDirectory)
+                    if opened {
+                        return "Focused the matching Codex workspace."
+                    }
+                }
+                if appIsRunning {
+                    try openAction(["-b", "com.openai.codex"])
+                    return "Activated Codex."
+                }
             case let id where Self.vscodeFamilyBundleIDs.contains(id):
                 if let workingDirectory = target.workingDirectory {
                     let opened = jumpToVSCodeFamilyWorkspace(workingDirectory, bundleIdentifier: id)
@@ -431,6 +447,39 @@ struct TerminalJumpService {
         """
 
         return try runAppleScript(script) == "matched"
+    }
+
+    // MARK: - Codex desktop app
+
+    private func jumpToCodexAppWorkspace(_ workspacePath: String) -> Bool {
+        if processRunner("codex", ["app", workspacePath]) {
+            return true
+        }
+
+        let candidates = [
+            "/Applications/Codex.app/Contents/Resources/codex",
+            NSHomeDirectory() + "/Applications/Codex.app/Contents/Resources/codex",
+        ]
+
+        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: path)
+            process.arguments = ["app", workspacePath]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus == 0 {
+                    return true
+                }
+            } catch {
+                continue
+            }
+        }
+
+        return false
     }
 
     // MARK: - VS Code family (VS Code, Insiders, Cursor, Windsurf, Trae)

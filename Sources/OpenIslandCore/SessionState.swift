@@ -382,6 +382,11 @@ public struct SessionState: Equatable, Sendable {
         upsert(session)
     }
 
+    /// Remove a session entirely from the state.
+    public mutating func removeSession(id: String) {
+        sessionsByID.removeValue(forKey: id)
+    }
+
     public mutating func removeInvisibleSessions() -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in

@@ -1001,6 +1001,13 @@ final class AppModel {
         synchronizeSelection()
     }
 
+    func removeSession(_ sessionID: String) {
+        dismissNotificationSurfaceIfPresent(for: sessionID)
+        state.removeSession(id: sessionID)
+        synchronizeSelection()
+        refreshOverlayPlacementIfVisible()
+    }
+
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
         guard let session = state.session(id: sessionID) else {
             return

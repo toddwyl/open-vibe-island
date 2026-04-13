@@ -561,7 +561,8 @@ struct IslandPanelView: View {
                     lang: model.lang,
                     onApprove: { model.approvePermission(for: session.id, action: $0) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
-                    onJump: { model.jumpToSession(session) }
+                    onJump: { model.jumpToSession(session) },
+                    onRemove: { model.removeSession(session.id) }
                 )
 
                 if model.allSessions.count > 1 {
@@ -589,7 +590,8 @@ struct IslandPanelView: View {
                         onApprove: { model.approvePermission(for: session.id, action: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil,
+                        onRemove: { model.removeSession(session.id) }
                     )
                 }
             }
@@ -1016,6 +1018,7 @@ private struct IslandSessionRow: View {
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
+    var onRemove: (() -> Void)?
 
     @State private var isHighlighted = false
     @State private var isManuallyExpanded = false
@@ -1177,6 +1180,15 @@ private struct IslandSessionRow: View {
         .onHover { hovering in
             guard isInteractive else { return }
             isHighlighted = hovering
+        }
+        .contextMenu {
+            if let onRemove {
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Label(lang.t("session.delete"), systemImage: "trash")
+                }
+            }
         }
         .onChange(of: isInteractive) { _, interactive in
             if !interactive {

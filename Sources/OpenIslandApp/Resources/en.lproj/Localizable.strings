@@ -133,6 +133,9 @@
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
 
+/* Session Context Menu */
+"session.delete" = "Delete Session";
+
 
 /* Island Panel - Subagents & Tasks */
 "subagents.title" = "Subagents (%lld)";

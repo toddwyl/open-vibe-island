@@ -133,6 +133,8 @@
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
 
+/* Island Panel - Session Actions */
+"session.delete" = "删除会话";
 
 /* Island Panel - Subagents & Tasks */
 "subagents.title" = "子代理 (%lld)";
